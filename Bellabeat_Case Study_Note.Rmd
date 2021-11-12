@@ -1,0 +1,568 @@
+---
+title: "Bellabeat - Case study"
+output: html_notebook
+---
+
+
+### About Bellabeat
+
+Bellabeat is a high-tech manufacturer of health-focused products for women. The founder of Bellabeat, Urška Sršen and Sando Mur, integrate art and technology to develop multiple health-focused products to empower women with knowledge about their own health and habits. 
+
+
+### Mission for the analysis 
+
+* 1. What are some trends in smart device usage?
+* 2. How could these trends apply to Bellabeat customers?
+* 3. How could these trends help influence Bellabeat marketing strategy? 
+
+
+### Business Task
+
+To analyze smart device usage data in order to gain insight into how consumers are using non-Bellabeat smart devices. Then, using this information to deliver high-level recommendations for how these trends can help on marketing strategy.
+
+
+### Key Stakeholders
+
+* **Urška Sršen**: Bellabeat’s cofounder and Chief Creative Officer
+* **Sando Mur**: Mathematician and Bellabeat’s cofounder; key member of the Bellabeat executive team
+* Bellabeat marketing analytics team
+
+
+### Data Analysis Process
+
+* Data Source: The data is obtained from dataset made available through [Mobius](https://www.kaggle.com/arashnic/fitbit) in Kaggle. 
+
+* Content of dataset: These datasets contain personal tracker data, including minute level output for physical activity, heart rate, and sleep monitoring from 33 consented Fitbit users. They were generated between 3rd to 5th December 2016.
+
+* CC0: Public Domain - No copyright 
+
+* Tool for analysis: R
+
+
+Below is the steps and code written in R for this analysis project.
+
+
+#### Loading packages:
+
+The packages in `tidyverse` such as `ggplot2`, `tibble`, `tidyr`, `readr`, `purrr`, and `dplyr` is useful for data cleaning, data manipulating, data exploring and data visualizing. 
+
+The `lubridate` package is not core package in `tidyverse`, it has to be loaded separately to handle date/time components in dataset. 
+
+```{r package}
+library(tidyverse)
+library(lubridate)
+```
+
+
+#### Importing datasets:
+
+The daily time frame datasets, such as daily activity, sleep and weight log datasets have been chosen to analyse on high-level trends in usage. The hourly intensity dataset is also used to gain insight on any pattern in hourly basis.    
+
+```{r import}
+daily_activity_merged <- read_csv("archive (2)/Fitabase Data 4.12.16-5.12.16/dailyActivity_merged.csv")
+
+sleep_day_merged <- read_csv("archive (2)/Fitabase Data 4.12.16-5.12.16/sleepDay_merged.csv")
+
+weight_log_Info_merged <- read_csv("archive (2)/Fitabase Data 4.12.16-5.12.16/weightLogInfo_merged.csv")
+
+intensity <- read_csv("archive (2)/Fitabase Data 4.12.16-5.12.16/hourlyIntensities_merged.csv")
+```
+
+
+```{r check imported data}
+#check the imported data
+head(daily_activity_merged)
+head(sleep_day_merged)
+head(weight_log_Info_merged)
+head(intensity)
+```
+
+There is 33 participants in daily activity and hourly intensity datasets, 24 participants in sleep dataset and only 8 participants in weight dataset. 
+There is no enough records in weight dataset, therefore it is excluded as it will not provide significant insight for the analysis.
+
+```{r n_distinct}
+#check the number of participant in each table
+n_distinct(daily_activity_merged$Id)
+n_distinct(sleep_day_merged$Id)
+n_distinct(weight_log_Info_merged$Id)
+n_distinct(intensity$Id)
+```
+
+
+By looking at the sedentary minutes information, it showed that the participants spent on average of **991.2 minutes (~16.52 hours) in a day on sedentary** than being active. We should keep tracking on this figure and aim to reduce it.   
+
+
+```{r summary}
+summary(daily_activity_merged)
+```
+
+
+
+#### Formating/ Cleaning the dataset:
+
+
+In daily activity dataset, the *ActivityDate* data type has been changed from string to date: 
+
+```{r make_date}
+#change the data type of ActivityDate from character to date format
+daily_acitivity_rectified_date <- daily_activity_merged %>% 
+  separate(ActivityDate, into = c("month", "day", "year"), convert = T) %>% 
+  mutate(ActivityDate = make_date(year, month, day))
+```
+
+
+In sleep dataset, the *SleepDay* data type has been changed from string to date: 
+
+```{r make_date2}
+#change the data type of SleepDay from character to date format
+sleep_rectified_day <- sleep_day_merged %>%
+  separate(SleepDay, into = c("month", "day", "year"), sep = "/", convert = T) %>% 
+  separate(year, into = c("year2016", "time","am/pm"), sep = " ", convert = T) %>%  
+  mutate(ActivityDate = make_date(year2016,month,day))
+```
+
+
+In intensity dataset, the *ActivityHour* data type has been changed from string to date and time separately: 
+
+```{r as.POSIXct}
+#fix the ActivityHour (chr) format in intensity table
+intensity$ActivityHour=as.POSIXct(intensity$ActivityHour, format="%m/%d/%Y %H:%M:%S %p", tz=Sys.timezone())
+intensity$time <- format(intensity$ActivityHour, format = "%H:%M:%S")
+intensity$date <- format(intensity$ActivityHour, format = "%m/%d/%Y")
+```
+
+
+
+#### Analysis the Daily Activity Table:
+
+
+The table below showed that the total distance is the sum of each different active level of distance (ie: Total distance = Very Active distance + Moderate Active distance + Light Active distance + Sedentary Active distance). Therefore we can ignore the individual level of distance and rely on the total distance for further analysis. 
+
+Besides that, the histogram proved that the majority of participants record 1440 minutes (=24 hours) for a particular day. Even though there are some incomplete records which did not recorded fully for a day, we still can use the data confidently.  
+
+
+```{r understanding table}
+total_dist_min <- daily_acitivity_rectified_date %>% 
+  group_by(Id, ActivityDate) %>% 
+  summarise(
+    total_distance = TotalDistance,
+    total_dist = VeryActiveDistance + ModeratelyActiveDistance + LightActiveDistance + SedentaryActiveDistance,
+    total_min = VeryActiveMinutes + FairlyActiveMinutes + LightlyActiveMinutes + SedentaryMinutes
+    ) %>% 
+  arrange(desc(total_min))
+
+total_dist_min %>% top_n(total_min, n=10)
+
+ggplot(total_dist_min, aes(total_min))+
+  geom_histogram(binwidth = 60)+ #1h = 60min
+  labs(
+    title = "Majority of records have been tracked for 1440 minutes on a particular day",
+    x = "minutes"
+  )
+  
+```
+
+
+
+The daily activity table was grouped based on Id, in order to better understand the participant on individual basis. We will consider a participant contributed to total active time only if they been active other sedentary.
+
+From the analysis, it showed that on average of 28 days has been recorded per person for this study, but there is an outlier of 4 days only. On the other hand, the analysis showed that the participant spent on average of **6,482 minutes (~108 hours / ~4.5 days) being active in a month**. As highlighted, due to an outlier, there is less active time has been recorded and also small dataset, we should see a higher average active time. 
+
+In short, this is one of the figure for us to keep monitoring in order to ensure our users keep being active. 
+
+
+```{r group into each person}
+#group the data into each person
+each_person <- daily_acitivity_rectified_date %>% 
+  group_by(Id) %>% 
+  summarise(
+    total_dist = sum(TotalDistance),
+    total_step = sum(TotalSteps),
+    total_very_min = sum(VeryActiveMinutes),
+    total_fairly_min = sum(FairlyActiveMinutes),
+    total_lightly_min = sum(LightlyActiveMinutes),
+    total_active_time = sum(total_very_min, total_fairly_min, total_lightly_min),
+    total_cal = sum(Calories),
+    n = n()
+  )
+```
+
+
+
+```{r check the total active time on individual basis}
+#check the total active time on individual basis
+summary(each_person$total_active_time)
+```
+
+
+
+```{r check the number of days has been recorded}
+#check the number of days has been recorded
+summary(each_person$n)
+```
+
+
+
+#### Visualize the Daily Activity Dataset:
+
+From the above analysis, we are able to categorized each participant into different user type (ie: Very active, Moderate active, Less active and Sedentary), based on the amount of time spent on being active. 
+For instant, if a participant spent more time for being active than 75% of total active time of everyone, it will be categorized as "very active" user.
+
+
+```{r factor into type}
+#factorize each individuals into different types
+activity_level <- c("Very Active", "Moderate Active", "Less Active", "Sedentary")
+
+user_type <- each_person %>% 
+  mutate(type = factor(
+    case_when(
+      total_active_time <= quantile(total_active_time, 0.25) ~ "Sedentary",
+      total_active_time > quantile(total_active_time, 0.25) & total_active_time <= mean(total_active_time) ~ "Less Active",
+      total_active_time > mean(total_active_time) & total_active_time <= quantile(total_active_time, 0.75) ~ "Moderate Active",
+      total_active_time > quantile(total_active_time, 0.75) ~ "Very Active"), 
+    levels = activity_level)
+    )
+```
+
+
+
+In this analysis, we found that many participants who equipped themselves with health devices tend to be either moderate active or very active. This leave some marketing opportunities to engage on those less active user and encourage them to become active. The below plots also consistently proved that active user walking/running longer distance and has more steps than others.   
+
+
+
+```{r visualize each type}
+#visualize each types
+ggplot(user_type, aes(type, fill = type))+
+  geom_bar(show.legend = F)+
+  labs(
+    title = "Most participants are moderate active",
+    x = NULL,
+    y = "No. of Participant"
+  )
+
+ggplot(user_type, aes(type, total_cal, fill = type))+
+  geom_boxplot(show.legend = F)+
+  labs(
+    title = "Active participant burned more calories than being sedentary",
+    x = NULL,
+    y = "Total Calories Burned"
+  )
+
+ggplot(user_type, aes(type, total_dist, fill = type))+
+  geom_boxplot(show.legend = F)+
+  labs(
+    title = "Very active participant walking or running the furthest",
+    x = NULL,
+    y = "Total Distance"
+  )
+
+ggplot(user_type, aes(type, total_step, fill = type))+
+  geom_boxplot(show.legend = F)+
+  labs(
+    title = "Very active participant has the most steps",
+    x = NULL,
+    y = "Total Steps"
+  )
+```
+
+
+From the calories plot, it seems that the total calories burned in three active user types is quite close to each other. After further investigation, we found out that even there is only 3 participants categorized as less active and each has certain level of calories burn which help to leverage their average value. Logically, less active user should burned less calories than being active, however they are other factors that can contribute to calories burned for a person, and it is beyond the information provided for this study. Probably a bigger dataset should able to provide better view on this issue. 
+
+
+```{r avg cal for each type}
+#check the average calories burned for each user type
+user_type %>% 
+  group_by(type) %>% 
+  summarise(
+    avg_cal = mean(total_cal),
+    n = n()
+  )
+```
+
+The below plot showed that there is no linear correlation between the amount of steps or distance with the amount of calories burned. 
+As mentioned, there are many factors can contribute to calories burned, therefore calories is not a significant indicator in this analysis unless other information is provided or a bigger dataset is used.    
+
+
+```{r distance and calories}
+#check the relationship between total distance and calories 
+ggplot(daily_acitivity_rectified_date, aes(TotalDistance, Calories))+
+  geom_point()+
+  geom_smooth()+
+  labs(
+    title = "No linear correlation between total walking/running distance with calories burned",
+    x = "Total Distance",
+    y = "Total Calories Burned"
+  )
+```
+
+
+```{r step and calories}
+#check the relationship between total steps and calories
+ggplot(daily_acitivity_rectified_date, aes(TotalSteps, Calories))+
+  geom_point(position = "jitter")+
+  geom_smooth()+
+  labs(
+    title = "No linear correlation between total steps with calories burned",
+    x = "Total Steps",
+    y = "Total Calories Burned"
+  )
+```
+
+
+However, for every 5KM increment of walking/running distance, it showed that the average calories burned increased gradually as well. 
+We could notify the user on the total calories burned on every 5KM of walking/running distance, it can encourage them to be more active. 
+
+
+```{r }
+ggplot(daily_acitivity_rectified_date, aes(TotalDistance, Calories))+
+  geom_boxplot(aes(group = cut_width(TotalDistance, 5)))+
+  labs(
+    title = "The average calories burned increased gradually for every 5KM increment",
+    x = "Total Distance",
+    y = "Total Calories Burned"
+  )
+```
+
+
+#### Study the Sleep table:
+
+
+Based on the plot below, even there is some records showed that participant spent more time on bed before fall asleep, most of the records still able to show liner correlation between time on bed and asleep time.
+
+```{r study sleep table}
+summary(sleep_rectified_day)
+
+ggplot(sleep_rectified_day, aes(TotalMinutesAsleep, TotalTimeInBed))+
+  geom_point()+
+  geom_smooth()+
+  labs(
+    title = "Amount of sleeping time is directly proportional to amount of time sleep on bed",
+    x = "Total Sleeping Time (min)",
+    y = "Total Time on Bed (min)"
+  )
+```
+
+
+The 24 participants for sleep study was then further breakdown into different sleep pattern based on the total amount of asleep time per day. 
+The normal sleeping hour should be between 6 to 8 hours (=360 min to 480 min). 
+
+The result showed that, most of the participant has normal sleep.
+
+```{r group sleep table}
+#group the sleep table into individual record and then categories the sleep pattern
+sleep_level <- c("Bad Sleep", "Normal Sleep", "Oversleep")
+
+sleep_ind <- sleep_rectified_day %>% 
+  group_by(Id) %>% 
+  summarise(
+    total_asleep = sum(TotalMinutesAsleep),
+    n = n()
+  ) %>% 
+  mutate("avg_sleep_per_day" = total_asleep/n) %>% 
+  mutate("sleep_type" = factor(
+    case_when(
+      avg_sleep_per_day <= 360 ~ "Bad Sleep",
+      avg_sleep_per_day > 360 & avg_sleep_per_day <= 480 ~ "Normal Sleep",
+      avg_sleep_per_day > 480 ~ "Oversleep"), 
+    levels = sleep_level)
+  )
+
+summary(sleep_ind)
+```
+
+```{r visualize sleep type}
+#visualize the amount of sleep type
+ggplot(sleep_ind, aes(sleep_type, fill = sleep_type))+
+  geom_bar(show.legend = F)+
+  labs(
+    title = "Most participant has normal amount of sleeping duration",
+    x = NULL,
+    y = "No. of Participant"
+  )
+```
+
+
+#### Analysis the Sleep Table with Daily Activity Table:
+
+The sleep table has then joined with daily activity table in order to look for sleep pattern for each user type.
+
+```{r merge sleep and daily activity}
+#Join both table together
+daily_joined_sleep <- merge(user_type, sleep_ind, by = "Id", all = T) %>% 
+  rename("activity_recorded_day" = n.x) %>% 
+  rename("sleep_recorded_day" = n.y) %>% 
+  select(-total_very_min, -total_fairly_min, -total_lightly_min)
+```
+
+
+The result showed that **moderate active users has higher average sleeping duration** than other user types. 
+
+
+```{r mean of sleep time per user type}
+#get the average sleeping time for each user type
+daily_joined_sleep %>% 
+  group_by(type) %>% 
+  summarise(
+    avg_sleep = mean(total_asleep, na.rm = T)
+  )
+```
+
+#### Visualize the Sleep Pattern:
+
+```{r visualize sleep pattern}
+#visualize the sleep pattern of each user type
+ggplot(daily_joined_sleep, aes(type, total_asleep, fill = type))+
+  geom_boxplot(show.legend = F)+
+  labs(
+    title = "Very active and moderate active user has higher average sleeping duration",
+    x = NULL,
+    y = "Total Sleeping Time (min)"
+  )
+```
+
+
+
+The result below showed that active people has more normal sleep. There is NA existed in each user type, it is due to not every user records their sleep. 
+
+We could notify the user on sleeping time and encourage them to track their sleeping duration.
+
+
+```{r visualise sleep pattern in each type}
+#visualize the number of sleep type in each categories of user type
+daily_joined_sleep %>% 
+  group_by(type, sleep_type) %>% 
+  summarise(
+    n = n()
+  ) %>% 
+  ggplot(aes(type, n, fill = sleep_type))+
+  geom_bar(stat = "identity", position = "dodge")+
+  labs(
+    y = "Number of Participant",
+    x = NULL,
+    title = "Moderate active user has more members with normal sleeping duration",
+    fill = "Sleep Type"
+  )
+```
+
+
+
+#### Study Intensity table:
+
+
+The intensity table has been group into hourly basis in order to find out the most active time across all participants. 
+From the below plot, it showed that there are two peaks where participants are more active. They become **active during lunch hour (12 p.m. to 2 p.m.) and after working hour (5 p.m. to 7 p.m.)**. 
+
+We could pushing notification and engage with users on this particular time.
+
+
+```{r study intensity table}
+#study intensity table
+intensity %>% 
+  group_by(time) %>% 
+  summarise(
+    avg_int = mean(TotalIntensity)
+  ) %>% 
+  ggplot(aes(time, avg_int))+
+  geom_histogram(stat = "identity")+
+  coord_flip()+
+  labs(
+    y = "Average Intensity",
+    x = "Time",
+    title = "Participants become most active between 5pm to 7pm"
+  )
+```
+
+
+
+Then, the intensity table has been further group into individual basis in order to join it with daily activity table. The combined data was then used to study the intensity for each user type. It proved that, the **most active participant has the highest average intensity** than others.
+
+
+```{r group intensity into individual}
+#group intensity into each individuals
+intensity_ind <- intensity %>% 
+  group_by(Id) %>% 
+  summarise(
+    avg_total_int = mean(TotalIntensity),
+    n = n()
+  )
+```
+
+
+
+```{r joined intensity with daily table}
+#join intensity table with daily table
+user_joined_intensity <- merge(daily_joined_sleep, intensity_ind, by = "Id", all = T) %>% 
+  select(-n)
+
+ggplot(user_joined_intensity, aes(type, avg_total_int, fill = type))+
+  geom_boxplot(show.legend = F)+
+  labs(
+    x = NULL,
+    y = "Average Intensity",
+    title = "Very active participant has the highest average intensity"
+  )
+```
+
+Lastly, the intensity table has been re-group based on each individual on hourly basis and joined with daily activity table. It was used to find out the intensity level on hourly basis for each user type. The very active user type showed to have two bell curve with two peak at 8 a.m. and 6 p.m. On the other hand, the moderate active user become most active after work (5 p.m. to 7 p.m.).
+
+We should target the marketing information or pushing the feed on this particular time frame in order to engage with our users. 
+
+
+```{r group intensity into individual plus time}
+#group based on individual and each time
+intensity_ind_time <- intensity %>% 
+  group_by(Id, time) %>% 
+  summarise(
+    avg_total_int = mean(TotalIntensity),
+    n = n()
+  )
+```
+
+
+```{r joined the individual intensity plus time with daily user type}
+#join individual intensity plus time with daily table
+user_joined_intensity_time <- merge(daily_joined_sleep, intensity_ind_time, by ="Id", all = T) %>% 
+  select(-n)
+
+
+user_joined_intensity_time %>% 
+  group_by(time) %>% 
+  ggplot(aes(time, avg_total_int, fill = type))+
+  geom_histogram(stat = "identity")+
+  facet_wrap(~type, nrow = 4)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(
+    fill = "User Type",
+    x = NULL,
+    y = "Average Intensity"
+  )
+```
+
+
+### Summary
+
+* There is 33 participant involved in activity study and they showed an average of 991.2 minutes (~16.52 hours) in a day on sedentary than being active.
+
+* The result showed the participant only spent on average of 6,482 minutes (~108 hours / ~4.5 days) being active in a month. 
+
+* Majority of participants who equipped with health tracking devices are being active. 
+
+* The average calories burned increased gradually with every 5 KM of walking/running.
+
+* Among 24 participant in sleep study, majority has normal sleep. 
+
+* Active users tend to has normal sleeping duration.
+
+* Most of the user become more active during lunch hour (12 p.m. to 2 p.m.) and after working hour (5 p.m. to 7 p.m.).
+
+
+### Recommendation
+
+Bellabeat should keep monitoring on the time spend on being sedentary for each user and notify the user to move around when they have less walking/running distance or steps. The notification or feed can send address to the user on at particular time based on their habit or user category. Also, Bellabeat can notify the user on sleep time based on their active duration and intensity.
+
+
+### Citation
+
+R Core Team (2021). R: A language and environment for statistical
+  computing. R Foundation for Statistical Computing, Vienna, Austria. URL
+  https://www.R-project.org/.
